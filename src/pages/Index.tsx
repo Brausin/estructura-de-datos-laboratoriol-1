@@ -49,7 +49,7 @@ const Index = () => {
       entries => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
-            const idx = sectionRefs.current.indexOf(entry.target as HTMLDivElement);
+            const idx = sectionRefs.current.indexOf(entry.target as HTMLElement);
             if (idx >= 0) setActiveSection(idx);
           }
         });
