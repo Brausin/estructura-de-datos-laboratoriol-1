@@ -10,12 +10,17 @@ export interface SimStep {
   detail: string;
   stack: StackEntry[];
   highlightLines: number[];
-  type: 'init' | 'push' | 'pop' | 'compute' | 'result' | 'error' | 'extract';
-  // For ArrayStack mode: show intermediate data structures
+  type: 'init' | 'push' | 'pop' | 'compute' | 'result' | 'error' | 'extract' | 'skip';
   inputMode: 'str' | 'arraystack';
-  expStack?: StackEntry[];    // exp (original input stack)
-  auxStack?: StackEntry[];    // aux (auxiliary stack)
-  tokensList?: string[];      // tokens list being built
+  expStack?: StackEntry[];
+  auxStack?: StackEntry[];
+  tokensList?: string[];
+  skipped?: boolean;
+  skipReason?: string;
+  // Track creation state
+  pilaCreated?: boolean;
+  tokensCreated?: boolean;
+  auxCreated?: boolean;
 }
 
 let _nextId = 0;
@@ -27,488 +32,318 @@ export function formatValue(v: number | string): string {
   return parseFloat(v.toFixed(6)).toString();
 }
 
-// Keep backward compat
 export function formatNumber(n: number): string {
   if (Number.isInteger(n)) return n.toString();
   return parseFloat(n.toFixed(6)).toString();
-}
-
-function makeBaseStep(inputMode: 'str' | 'arraystack'): Pick<SimStep, 'inputMode' | 'expStack' | 'auxStack' | 'tokensList'> {
-  return { inputMode, expStack: undefined, auxStack: undefined, tokensList: undefined };
 }
 
 export function generateSteps(expression: string, mode: 'str' | 'arraystack' = 'str'): SimStep[] {
   _nextId = 0;
   const rawTokens = expression.trim().split(/\s+/);
   const steps: SimStep[] = [];
-  const stack: StackEntry[] = [];
   const ops = ['+', '-', '*', '/', '^'];
 
-  if (mode === 'arraystack') {
-    // Simulate: exp is an ArrayStack already containing the tokens
-    // We show the extraction process with aux stack
-    const expStack: StackEntry[] = rawTokens.map(t => ({ id: nextId(), value: isNaN(parseFloat(t)) ? t : parseFloat(t) }));
-    const auxStack: StackEntry[] = [];
-    const tokensList: string[] = [];
+  // Mutable state
+  const pila: StackEntry[] = [];
+  let pilaCreated = false;
+  let tokensCreated = false;
+  const tokensList: string[] = [];
+  let auxCreated = false;
 
-    // Step: isinstance check
+  const expStack: StackEntry[] = mode === 'arraystack'
+    ? rawTokens.map(t => ({ id: nextId(), value: isNaN(parseFloat(t)) ? t : parseFloat(t) }))
+    : [];
+  const auxStack: StackEntry[] = [];
+
+  function snap(): Pick<SimStep, 'stack' | 'inputMode' | 'expStack' | 'auxStack' | 'tokensList' | 'pilaCreated' | 'tokensCreated' | 'auxCreated'> {
+    return {
+      stack: [...pila],
+      inputMode: mode,
+      expStack: mode === 'arraystack' ? [...expStack] : undefined,
+      auxStack: mode === 'arraystack' ? (auxCreated ? [...auxStack] : undefined) : undefined,
+      tokensList: tokensCreated ? [...tokensList] : undefined,
+      pilaCreated,
+      tokensCreated,
+      auxCreated: mode === 'arraystack' ? auxCreated : undefined,
+    };
+  }
+
+  function addStep(p: {
+    line: number | number[];
+    action: string;
+    detail: string;
+    type: SimStep['type'];
+    tokenIndex?: number;
+    token?: string;
+    skipped?: boolean;
+    skipReason?: string;
+  }) {
+    const lines = Array.isArray(p.line) ? p.line : [p.line];
     steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Verificar tipo de entrada',
-      detail: 'isinstance(exp, ArrayStack) → True',
-      stack: [],
-      highlightLines: [5, 6],
-      type: 'init',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
+      tokenIndex: p.tokenIndex ?? -1,
+      token: p.token ?? '',
+      action: p.action,
+      detail: p.detail,
+      highlightLines: lines,
+      type: p.skipped ? 'skip' : p.type,
+      skipped: p.skipped,
+      skipReason: p.skipReason,
+      ...snap(),
     });
+  }
 
-    // Step: create aux and tokens
-    steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Crear auxiliares',
-      detail: 'aux = ArrayStack()   tokens = []',
-      stack: [],
-      highlightLines: [6, 7],
-      type: 'init',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
-    });
+  // ═══ LINE 1: def Notacion_Polaca(exp): ═══
+  addStep({
+    line: 1,
+    action: 'Llamada a función',
+    detail: mode === 'str'
+      ? `Notacion_Polaca("${expression}")`
+      : `Notacion_Polaca(exp)  # exp es un ArrayStack con [${rawTokens.join(', ')}]`,
+    type: 'init',
+  });
 
-    // First while: pop from exp, push to aux (reverses order)
-    steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Bucle 1: Vaciar exp → aux',
-      detail: 'while not exp.is_empty(): aux.push(exp.pop())',
-      stack: [],
-      highlightLines: [9, 10],
+  // ═══ TYPE CHECKING: Lines 3-19 ═══
+  if (mode === 'str') {
+    // Line 3: True
+    addStep({ line: 3, action: 'isinstance(exp, str) → True', detail: 'La entrada es una cadena de texto', type: 'init' });
+
+    // Line 4: tokens = exp.split()
+    tokensCreated = true;
+    tokensList.push(...rawTokens);
+    addStep({ line: 4, action: 'tokens = exp.split()', detail: `tokens = [${rawTokens.map(t => `"${t}"`).join(', ')}]`, type: 'init' });
+
+    // Line 6: skipped
+    addStep({ line: 6, action: 'elif isinstance(exp, ArrayStack):', detail: 'No se evalúa', type: 'init', skipped: true, skipReason: 'Ya se entró en el bloque if (línea 3)' });
+
+    // Line 18-19: skipped
+    addStep({ line: [18, 19], action: 'else: raise TypeError(...)', detail: 'No se evalúa', type: 'init', skipped: true, skipReason: 'Ya se entró en el bloque if (línea 3)' });
+
+  } else {
+    // Line 3: False
+    addStep({ line: 3, action: 'isinstance(exp, str) → False', detail: 'La entrada no es str', type: 'init', skipped: true, skipReason: 'exp es un ArrayStack, no str' });
+
+    // Line 4: skipped
+    addStep({ line: 4, action: 'tokens = exp.split()', detail: 'No se ejecuta', type: 'init', skipped: true, skipReason: 'La condición de línea 3 fue False' });
+
+    // Line 6: True
+    addStep({ line: 6, action: 'isinstance(exp, ArrayStack) → True', detail: 'La entrada es un ArrayStack', type: 'init' });
+
+    // Line 7: aux = ArrayStack()
+    auxCreated = true;
+    addStep({ line: 7, action: 'aux = ArrayStack()', detail: 'Se crea la pila auxiliar vacía', type: 'extract' });
+
+    // Line 8: tokens = []
+    tokensCreated = true;
+    addStep({ line: 8, action: 'tokens = []', detail: 'Se crea la lista de tokens vacía', type: 'extract' });
+
+    // ── First while loop: exp → aux ──
+    addStep({
+      line: 10,
+      action: 'while not exp.is_empty():',
+      detail: `exp tiene ${expStack.length} elementos → True`,
       type: 'extract',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
     });
 
     while (expStack.length > 0) {
       const popped = expStack.pop()!;
       auxStack.push(popped);
-      steps.push({
-        tokenIndex: -1, token: '',
-        action: `exp.pop() → "${formatValue(popped.value)}" → aux.push()`,
-        detail: `aux.push(exp.pop())`,
-        stack: [],
-        highlightLines: [10],
+      addStep({ line: 11, action: 'aux.push(exp.pop())', detail: `Sacó "${formatValue(popped.value)}" de exp → push a aux`, type: 'extract' });
+
+      addStep({
+        line: 10,
+        action: 'while not exp.is_empty():',
+        detail: expStack.length > 0 ? `exp tiene ${expStack.length} elemento(s) → True` : 'exp vacía → False → sale del bucle',
         type: 'extract',
-        inputMode: 'arraystack',
-        expStack: [...expStack],
-        auxStack: [...auxStack],
-        tokensList: [...tokensList],
+        skipped: expStack.length === 0,
+        skipReason: expStack.length === 0 ? 'exp está vacía, la condición es False' : undefined,
       });
     }
 
-    // Second while: pop from aux, append to tokens, push back to exp
-    steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Bucle 2: aux → tokens + exp',
-      detail: 'while not aux.is_empty(): t = aux.pop(); tokens.append(t); exp.push(t)',
-      stack: [],
-      highlightLines: [12, 13, 14, 15],
+    // ── Second while loop: aux → tokens + exp ──
+    addStep({
+      line: 13,
+      action: 'while not aux.is_empty():',
+      detail: `aux tiene ${auxStack.length} elementos → True`,
       type: 'extract',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
     });
 
     while (auxStack.length > 0) {
       const popped = auxStack.pop()!;
-      tokensList.push(String(formatValue(popped.value)));
+      const val = formatValue(popped.value);
+
+      addStep({ line: 14, action: `t = aux.pop()`, detail: `t = "${val}"`, type: 'extract' });
+
+      tokensList.push(String(val));
+      addStep({ line: 15, action: `tokens.append(t)`, detail: `tokens = [${tokensList.map(t => `"${t}"`).join(', ')}]`, type: 'extract' });
+
       expStack.push({ id: nextId(), value: popped.value });
-      steps.push({
-        tokenIndex: -1, token: '',
-        action: `t = aux.pop() → "${formatValue(popped.value)}"`,
-        detail: `tokens.append("${formatValue(popped.value)}") + exp.push("${formatValue(popped.value)}")`,
-        stack: [],
-        highlightLines: [13, 14, 15],
+      addStep({ line: 16, action: `exp.push(t)`, detail: `exp.push("${val}") → exp tiene ${expStack.length} elemento(s)`, type: 'extract' });
+
+      addStep({
+        line: 13,
+        action: 'while not aux.is_empty():',
+        detail: auxStack.length > 0 ? `aux tiene ${auxStack.length} elemento(s) → True` : 'aux vacía → False → sale del bucle',
         type: 'extract',
-        inputMode: 'arraystack',
-        expStack: [...expStack],
-        auxStack: [...auxStack],
-        tokensList: [...tokensList],
+        skipped: auxStack.length === 0,
+        skipReason: auxStack.length === 0 ? 'aux está vacía, la condición es False' : undefined,
       });
     }
 
-    // Now tokens are ready, continue with normal evaluation
-    steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Tokens extraídos ✓',
-      detail: `tokens = [${tokensList.map(t => `"${t}"`).join(', ')}]`,
-      stack: [],
-      highlightLines: [20],
-      type: 'init',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
-    });
-
-    // Create pila
-    steps.push({
-      tokenIndex: -1, token: '',
-      action: 'Crear pila vacía',
-      detail: 'pila = ArrayStack()',
-      stack: [...stack],
-      highlightLines: [20],
-      type: 'init',
-      inputMode: 'arraystack',
-      expStack: [...expStack],
-      auxStack: [...auxStack],
-      tokensList: [...tokensList],
-    });
-
-    // Process tokens (same logic as str mode but with arraystack metadata)
-    const tokens = tokensList;
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-
-      if (ops.includes(token)) {
-        steps.push({
-          tokenIndex: i, token,
-          action: `Token: "${token}" (operador)`,
-          detail: `token in ["+", "-", "*", "/", "^"] → True`,
-          stack: [...stack],
-          highlightLines: [22, 24],
-          type: 'init',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-
-        if (stack.length < 2) {
-          steps.push({
-            tokenIndex: i, token,
-            action: '❌ Error: faltan operandos',
-            detail: `len(pila) = ${stack.length} < 2`,
-            stack: [...stack],
-            highlightLines: [26, 27],
-            type: 'error',
-            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-          });
-          return steps;
-        }
-
-        const bEntry = stack.pop()!;
-        steps.push({
-          tokenIndex: i, token,
-          action: `pop() → ${formatValue(bEntry.value)}`,
-          detail: `b = pila.pop() → ${formatValue(bEntry.value)}`,
-          stack: [...stack],
-          highlightLines: [29],
-          type: 'pop',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-
-        const aEntry = stack.pop()!;
-        steps.push({
-          tokenIndex: i, token,
-          action: `pop() → ${formatValue(aEntry.value)}`,
-          detail: `a = pila.pop() → ${formatValue(aEntry.value)}`,
-          stack: [...stack],
-          highlightLines: [30],
-          type: 'pop',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-
-        const a = aEntry.value as number, b = bEntry.value as number;
-        let result: number;
-        let opLines: number[];
-
-        switch (token) {
-          case '+': result = a + b; opLines = [32, 33]; break;
-          case '-': result = a - b; opLines = [34, 35]; break;
-          case '*': result = a * b; opLines = [36, 37]; break;
-          case '/': result = a / b; opLines = [38, 39]; break;
-          case '^': result = Math.pow(a, b); opLines = [40, 41]; break;
-          default: result = 0; opLines = [32, 33];
-        }
-
-        const resultEntry = { id: nextId(), value: result };
-        stack.push(resultEntry);
-
-        steps.push({
-          tokenIndex: i, token,
-          action: `${formatNumber(a)} ${token === '^' ? '**' : token} ${formatNumber(b)} = ${formatNumber(result)}`,
-          detail: `pila.push(${formatNumber(result)})`,
-          stack: [...stack],
-          highlightLines: opLines,
-          type: 'compute',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-
-      } else {
-        const num = parseFloat(token);
-
-        if (isNaN(num)) {
-          steps.push({
-            tokenIndex: i, token,
-            action: `Token: "${token}"`,
-            detail: 'No es número ni operador válido',
-            stack: [...stack],
-            highlightLines: [22, 43, 44, 45],
-            type: 'init',
-            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-          });
-          steps.push({
-            tokenIndex: i, token,
-            action: `❌ Error: operador inválido`,
-            detail: `"${token}" no es un token válido`,
-            stack: [...stack],
-            highlightLines: [47, 48],
-            type: 'error',
-            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-          });
-          return steps;
-        }
-
-        steps.push({
-          tokenIndex: i, token,
-          action: `Token: "${token}" (número)`,
-          detail: `numero = float("${token}") → ${formatNumber(num)}`,
-          stack: [...stack],
-          highlightLines: [22, 43, 44, 45],
-          type: 'init',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-
-        const entry = { id: nextId(), value: num };
-        stack.push(entry);
-
-        steps.push({
-          tokenIndex: i, token,
-          action: `push(${formatNumber(num)})`,
-          detail: `pila.push(${formatNumber(num)})`,
-          stack: [...stack],
-          highlightLines: [46],
-          type: 'push',
-          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-        });
-      }
-    }
-
-    if (stack.length > 1) {
-      steps.push({
-        tokenIndex: tokens.length, token: '',
-        action: '❌ Error: demasiados operandos',
-        detail: `len(pila) = ${stack.length} > 1`,
-        stack: [...stack],
-        highlightLines: [50, 51],
-        type: 'error',
-        inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-      });
-      return steps;
-    }
-
-    if (stack.length === 1) {
-      const resultado = stack[0].value as number;
-      steps.push({
-        tokenIndex: tokens.length, token: '',
-        action: `✅ Resultado: ${formatNumber(resultado)}`,
-        detail: `resultado = pila.pop() → ${formatNumber(resultado)}`,
-        stack: [],
-        highlightLines: [53, 55, 56],
-        type: 'result',
-        inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
-      });
-    }
-
-    return steps;
+    // Line 18-19: skipped
+    addStep({ line: [18, 19], action: 'else: raise TypeError(...)', detail: 'No se evalúa', type: 'init', skipped: true, skipReason: 'Ya se ejecutó el bloque elif (línea 6)' });
   }
 
-  // === STR MODE (original) ===
-  const tokens = rawTokens;
-  const base = makeBaseStep('str');
+  // ═══ LINE 21: pila = ArrayStack() ═══
+  pilaCreated = true;
+  addStep({ line: 21, action: 'pila = ArrayStack()', detail: 'Se crea la pila de evaluación vacía', type: 'init' });
 
-  steps.push({
-    tokenIndex: -1, token: '',
-    action: 'Verificar tipo de entrada',
-    detail: `isinstance(exp, str) → True`,
-    stack: [...stack],
-    highlightLines: [2],
-    type: 'init',
-    ...base,
-  });
-
-  steps.push({
-    tokenIndex: -1, token: '',
-    action: 'Obtener tokens',
-    detail: `tokens = "${expression}".split() → [${tokens.map(t => `"${t}"`).join(', ')}]`,
-    stack: [...stack],
-    highlightLines: [3],
-    type: 'init',
-    ...base,
-  });
-
-  steps.push({
-    tokenIndex: -1, token: '',
-    action: 'Crear pila vacía',
-    detail: 'pila = ArrayStack()',
-    stack: [...stack],
-    highlightLines: [20],
-    type: 'init',
-    ...base,
-  });
+  // ═══ TOKEN LOOP: Lines 23-49 ═══
+  const tokens = [...tokensList];
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
 
-    if (ops.includes(token)) {
-      steps.push({
-        tokenIndex: i, token,
-        action: `Token: "${token}" (operador)`,
-        detail: `token in ["+", "-", "*", "/", "^"] → True`,
-        stack: [...stack],
-        highlightLines: [22, 24],
-        type: 'init',
-        ...base,
-      });
+    // Line 23: for token in tokens
+    addStep({ line: 23, action: 'for token in tokens:', detail: `token = "${token}" (${i + 1} de ${tokens.length})`, type: 'init', tokenIndex: i, token });
 
-      if (stack.length < 2) {
-        steps.push({
-          tokenIndex: i, token,
-          action: '❌ Error: faltan operandos',
-          detail: `len(pila) = ${stack.length} < 2`,
-          stack: [...stack],
-          highlightLines: [26, 27],
-          type: 'error',
-          ...base,
-        });
+    if (ops.includes(token)) {
+      // Line 25: operator check → True
+      addStep({ line: 25, action: `token in ["+", "-", "*", "/", "^"] → True`, detail: `"${token}" es un operador`, type: 'init', tokenIndex: i, token });
+
+      // Line 27: len check
+      if (pila.length < 2) {
+        addStep({ line: 27, action: `len(pila) < 2 → True`, detail: `len(pila) = ${pila.length}`, type: 'error', tokenIndex: i, token });
+        addStep({ line: 28, action: '❌ raise ValueError("Error: faltan operandos")', detail: `No hay suficientes operandos en la pila`, type: 'error', tokenIndex: i, token });
         return steps;
       }
 
-      const bEntry = stack.pop()!;
-      steps.push({
-        tokenIndex: i, token,
-        action: `pop() → ${formatValue(bEntry.value)}`,
-        detail: `b = pila.pop() → ${formatValue(bEntry.value)}`,
-        stack: [...stack],
-        highlightLines: [29],
-        type: 'pop',
-        ...base,
-      });
+      addStep({ line: 27, action: `len(pila) < 2 → False`, detail: `len(pila) = ${pila.length} ≥ 2 ✓`, type: 'init', tokenIndex: i, token });
 
-      const aEntry = stack.pop()!;
-      steps.push({
-        tokenIndex: i, token,
-        action: `pop() → ${formatValue(aEntry.value)}`,
-        detail: `a = pila.pop() → ${formatValue(aEntry.value)}`,
-        stack: [...stack],
-        highlightLines: [30],
-        type: 'pop',
-        ...base,
-      });
+      // Line 30: b = pila.pop()
+      const bEntry = pila.pop()!;
+      addStep({ line: 30, action: `b = pila.pop()`, detail: `b = ${formatValue(bEntry.value)}`, type: 'pop', tokenIndex: i, token });
 
-      const a = aEntry.value as number, b = bEntry.value as number;
-      let result: number;
-      let opLines: number[];
+      // Line 31: a = pila.pop()
+      const aEntry = pila.pop()!;
+      addStep({ line: 31, action: `a = pila.pop()`, detail: `a = ${formatValue(aEntry.value)}`, type: 'pop', tokenIndex: i, token });
 
-      switch (token) {
-        case '+': result = a + b; opLines = [32, 33]; break;
-        case '-': result = a - b; opLines = [34, 35]; break;
-        case '*': result = a * b; opLines = [36, 37]; break;
-        case '/': result = a / b; opLines = [38, 39]; break;
-        case '^': result = Math.pow(a, b); opLines = [40, 41]; break;
-        default: result = 0; opLines = [32, 33];
+      const a = aEntry.value as number;
+      const b = bEntry.value as number;
+      let result!: number;
+
+      // Operator matching: lines 33-42
+      const opInfo: { op: string; checkLine: number; execLine: number; sym: string }[] = [
+        { op: '+', checkLine: 33, execLine: 34, sym: '+' },
+        { op: '-', checkLine: 35, execLine: 36, sym: '-' },
+        { op: '*', checkLine: 37, execLine: 38, sym: '*' },
+        { op: '/', checkLine: 39, execLine: 40, sym: '/' },
+        { op: '^', checkLine: 41, execLine: 42, sym: '**' },
+      ];
+
+      let matched = false;
+      for (const info of opInfo) {
+        if (matched) {
+          // After match: skip
+          addStep({
+            line: info.checkLine, action: `elif token == "${info.op}":`,
+            detail: 'No se evalúa', type: 'init', skipped: true,
+            skipReason: `Ya se encontró coincidencia`, tokenIndex: i, token,
+          });
+        } else if (info.op === token) {
+          // Match!
+          addStep({
+            line: info.checkLine,
+            action: `${info.op === '+' ? 'if' : 'elif'} token == "${info.op}" → True`,
+            detail: `Coincide: operación ${info.sym}`,
+            type: 'init', tokenIndex: i, token,
+          });
+
+          switch (token) {
+            case '+': result = a + b; break;
+            case '-': result = a - b; break;
+            case '*': result = a * b; break;
+            case '/': result = a / b; break;
+            case '^': result = Math.pow(a, b); break;
+          }
+
+          pila.push({ id: nextId(), value: result });
+          addStep({
+            line: info.execLine,
+            action: `pila.push(${formatNumber(a)} ${info.sym} ${formatNumber(b)})`,
+            detail: `pila.push(${formatNumber(result)})`,
+            type: 'compute', tokenIndex: i, token,
+          });
+
+          matched = true;
+        } else {
+          // Before match: doesn't match
+          addStep({
+            line: info.checkLine,
+            action: `${info.op === '+' ? 'if' : 'elif'} token == "${info.op}" → False`,
+            detail: `"${token}" ≠ "${info.op}"`,
+            type: 'init', skipped: true,
+            skipReason: `El operador es "${token}", no "${info.op}"`,
+            tokenIndex: i, token,
+          });
+        }
       }
 
-      const resultEntry = { id: nextId(), value: result };
-      stack.push(resultEntry);
-
-      steps.push({
-        tokenIndex: i, token,
-        action: `${formatNumber(a)} ${token === '^' ? '**' : token} ${formatNumber(b)} = ${formatNumber(result)}`,
-        detail: `pila.push(${formatNumber(result)})`,
-        stack: [...stack],
-        highlightLines: opLines,
-        type: 'compute',
-        ...base,
-      });
+      // Line 44: else → skipped
+      addStep({ line: 44, action: 'else:', detail: 'No aplica: token es operador', type: 'init', skipped: true, skipReason: 'Se entró en el bloque if (línea 25)', tokenIndex: i, token });
 
     } else {
+      // Number or invalid token
+      // Line 25: False
+      addStep({ line: 25, action: `token in ["+", "-", "*", "/", "^"] → False`, detail: `"${token}" no es un operador`, type: 'init', tokenIndex: i, token });
+
+      // Line 44: else
+      addStep({ line: 44, action: 'else:', detail: 'Se entra en el bloque else', type: 'init', tokenIndex: i, token });
+
+      // Line 45: try
+      addStep({ line: 45, action: 'try:', detail: 'Intentar convertir a número', type: 'init', tokenIndex: i, token });
+
       const num = parseFloat(token);
 
       if (isNaN(num)) {
-        steps.push({
-          tokenIndex: i, token,
-          action: `Token: "${token}"`,
-          detail: 'No es número ni operador válido',
-          stack: [...stack],
-          highlightLines: [22, 43, 44, 45],
-          type: 'init',
-          ...base,
-        });
-        steps.push({
-          tokenIndex: i, token,
-          action: `❌ Error: operador inválido`,
-          detail: `"${token}" no es un token válido`,
-          stack: [...stack],
-          highlightLines: [47, 48],
-          type: 'error',
-          ...base,
-        });
+        // Line 46: float fails
+        addStep({ line: 46, action: `float("${token}") → Error`, detail: 'No es un número válido', type: 'error', tokenIndex: i, token });
+        addStep({ line: 48, action: 'except:', detail: 'Se captura la excepción', type: 'error', tokenIndex: i, token });
+        addStep({ line: 49, action: '❌ raise ValueError("Error: operador inválido")', detail: `"${token}" no es válido`, type: 'error', tokenIndex: i, token });
         return steps;
       }
 
-      steps.push({
-        tokenIndex: i, token,
-        action: `Token: "${token}" (número)`,
-        detail: `numero = float("${token}") → ${formatNumber(num)}`,
-        stack: [...stack],
-        highlightLines: [22, 43, 44, 45],
-        type: 'init',
-        ...base,
-      });
+      // Line 46: float succeeds
+      addStep({ line: 46, action: `numero = float("${token}")`, detail: `numero = ${formatNumber(num)}`, type: 'init', tokenIndex: i, token });
 
-      const entry = { id: nextId(), value: num };
-      stack.push(entry);
+      // Line 47: push
+      pila.push({ id: nextId(), value: num });
+      addStep({ line: 47, action: `pila.push(${formatNumber(num)})`, detail: `Se agrega ${formatNumber(num)} a la pila`, type: 'push', tokenIndex: i, token });
 
-      steps.push({
-        tokenIndex: i, token,
-        action: `push(${formatNumber(num)})`,
-        detail: `pila.push(${formatNumber(num)})`,
-        stack: [...stack],
-        highlightLines: [46],
-        type: 'push',
-        ...base,
-      });
+      // Line 48: except → skipped
+      addStep({ line: [48, 49], action: 'except: raise ValueError(...)', detail: 'No hubo excepción', type: 'init', skipped: true, skipReason: 'float() se ejecutó correctamente', tokenIndex: i, token });
     }
   }
 
-  if (stack.length > 1) {
-    steps.push({
-      tokenIndex: tokens.length, token: '',
-      action: '❌ Error: demasiados operandos',
-      detail: `len(pila) = ${stack.length} > 1`,
-      stack: [...stack],
-      highlightLines: [50, 51],
-      type: 'error',
-      ...base,
-    });
+  // ═══ FINAL: Lines 51-59 ═══
+  if (pila.length > 1) {
+    addStep({ line: 51, action: `len(pila) > 1 → True`, detail: `len(pila) = ${pila.length}`, type: 'error' });
+    addStep({ line: 52, action: '❌ raise ValueError("Error: demasiados operandos")', detail: `Quedan ${pila.length} valores en la pila`, type: 'error' });
     return steps;
   }
 
-  if (stack.length === 1) {
-    const resultado = stack[0].value as number;
-    steps.push({
-      tokenIndex: tokens.length, token: '',
-      action: `✅ Resultado: ${formatNumber(resultado)}`,
-      detail: `resultado = pila.pop() → ${formatNumber(resultado)}`,
-      stack: [],
-      highlightLines: [53, 55, 56],
-      type: 'result',
-      ...base,
-    });
+  addStep({ line: 51, action: `len(pila) > 1 → False`, detail: `len(pila) = ${pila.length} ✓`, type: 'init' });
+
+  if (pila.length === 1) {
+    const resultado = pila.pop()!.value as number;
+    addStep({ line: 54, action: `resultado = pila.pop()`, detail: `resultado = ${formatNumber(resultado)}`, type: 'result' });
+
+    if (Number.isInteger(resultado)) {
+      addStep({ line: 56, action: `resultado.is_integer() → True`, detail: `${formatNumber(resultado)} es entero`, type: 'result' });
+      addStep({ line: 57, action: `✅ return int(resultado)`, detail: `Resultado final: ${Math.floor(resultado)}`, type: 'result' });
+    } else {
+      addStep({ line: 56, action: `resultado.is_integer() → False`, detail: `${formatNumber(resultado)} tiene decimales`, type: 'result' });
+      addStep({ line: 59, action: `✅ return resultado`, detail: `Resultado final: ${formatNumber(resultado)}`, type: 'result' });
+    }
   }
 
   return steps;
