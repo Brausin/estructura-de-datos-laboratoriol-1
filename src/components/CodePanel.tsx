@@ -93,11 +93,17 @@ export function CodePanel({ code, highlightedLines = [], title, className, maxHe
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (highlightedLines.length > 0 && lineRefs.current[highlightedLines[0]]) {
-      lineRefs.current[highlightedLines[0]]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
+    if (highlightedLines.length > 0 && containerRef.current) {
+      const lineIndex = highlightedLines[0] - 1;
+      const el = lineRefs.current[lineIndex];
+      if (el) {
+        const container = containerRef.current;
+        const elTop = el.offsetTop;
+        const elHeight = el.offsetHeight;
+        const containerHeight = container.clientHeight;
+        const targetScroll = elTop - containerHeight / 2 + elHeight / 2;
+        container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      }
     }
   }, [highlightedLines]);
 
