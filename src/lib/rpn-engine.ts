@@ -1,6 +1,6 @@
 export interface StackEntry {
   id: number;
-  value: number;
+  value: number | string;
 }
 
 export interface SimStep {
@@ -10,31 +10,344 @@ export interface SimStep {
   detail: string;
   stack: StackEntry[];
   highlightLines: number[];
-  type: 'init' | 'push' | 'pop' | 'compute' | 'result' | 'error';
+  type: 'init' | 'push' | 'pop' | 'compute' | 'result' | 'error' | 'extract';
+  // For ArrayStack mode: show intermediate data structures
+  inputMode: 'str' | 'arraystack';
+  expStack?: StackEntry[];    // exp (original input stack)
+  auxStack?: StackEntry[];    // aux (auxiliary stack)
+  tokensList?: string[];      // tokens list being built
 }
 
 let _nextId = 0;
 function nextId() { return _nextId++; }
 
+export function formatValue(v: number | string): string {
+  if (typeof v === 'string') return v;
+  if (Number.isInteger(v)) return v.toString();
+  return parseFloat(v.toFixed(6)).toString();
+}
+
+// Keep backward compat
 export function formatNumber(n: number): string {
   if (Number.isInteger(n)) return n.toString();
   return parseFloat(n.toFixed(6)).toString();
 }
 
-export function generateSteps(expression: string): SimStep[] {
+function makeBaseStep(inputMode: 'str' | 'arraystack'): Pick<SimStep, 'inputMode' | 'expStack' | 'auxStack' | 'tokensList'> {
+  return { inputMode, expStack: undefined, auxStack: undefined, tokensList: undefined };
+}
+
+export function generateSteps(expression: string, mode: 'str' | 'arraystack' = 'str'): SimStep[] {
   _nextId = 0;
-  const tokens = expression.trim().split(/\s+/);
+  const rawTokens = expression.trim().split(/\s+/);
   const steps: SimStep[] = [];
   const stack: StackEntry[] = [];
   const ops = ['+', '-', '*', '/', '^'];
 
+  if (mode === 'arraystack') {
+    // Simulate: exp is an ArrayStack already containing the tokens
+    // We show the extraction process with aux stack
+    const expStack: StackEntry[] = rawTokens.map(t => ({ id: nextId(), value: isNaN(parseFloat(t)) ? t : parseFloat(t) }));
+    const auxStack: StackEntry[] = [];
+    const tokensList: string[] = [];
+
+    // Step: isinstance check
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Verificar tipo de entrada',
+      detail: 'isinstance(exp, ArrayStack) → True',
+      stack: [],
+      highlightLines: [5, 6],
+      type: 'init',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    // Step: create aux and tokens
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Crear auxiliares',
+      detail: 'aux = ArrayStack()   tokens = []',
+      stack: [],
+      highlightLines: [6, 7],
+      type: 'init',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    // First while: pop from exp, push to aux (reverses order)
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Bucle 1: Vaciar exp → aux',
+      detail: 'while not exp.is_empty(): aux.push(exp.pop())',
+      stack: [],
+      highlightLines: [9, 10],
+      type: 'extract',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    while (expStack.length > 0) {
+      const popped = expStack.pop()!;
+      auxStack.push(popped);
+      steps.push({
+        tokenIndex: -1, token: '',
+        action: `exp.pop() → "${formatValue(popped.value)}" → aux.push()`,
+        detail: `aux.push(exp.pop())`,
+        stack: [],
+        highlightLines: [10],
+        type: 'extract',
+        inputMode: 'arraystack',
+        expStack: [...expStack],
+        auxStack: [...auxStack],
+        tokensList: [...tokensList],
+      });
+    }
+
+    // Second while: pop from aux, append to tokens, push back to exp
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Bucle 2: aux → tokens + exp',
+      detail: 'while not aux.is_empty(): t = aux.pop(); tokens.append(t); exp.push(t)',
+      stack: [],
+      highlightLines: [12, 13, 14, 15],
+      type: 'extract',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    while (auxStack.length > 0) {
+      const popped = auxStack.pop()!;
+      tokensList.push(String(formatValue(popped.value)));
+      expStack.push({ id: nextId(), value: popped.value });
+      steps.push({
+        tokenIndex: -1, token: '',
+        action: `t = aux.pop() → "${formatValue(popped.value)}"`,
+        detail: `tokens.append("${formatValue(popped.value)}") + exp.push("${formatValue(popped.value)}")`,
+        stack: [],
+        highlightLines: [13, 14, 15],
+        type: 'extract',
+        inputMode: 'arraystack',
+        expStack: [...expStack],
+        auxStack: [...auxStack],
+        tokensList: [...tokensList],
+      });
+    }
+
+    // Now tokens are ready, continue with normal evaluation
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Tokens extraídos ✓',
+      detail: `tokens = [${tokensList.map(t => `"${t}"`).join(', ')}]`,
+      stack: [],
+      highlightLines: [20],
+      type: 'init',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    // Create pila
+    steps.push({
+      tokenIndex: -1, token: '',
+      action: 'Crear pila vacía',
+      detail: 'pila = ArrayStack()',
+      stack: [...stack],
+      highlightLines: [20],
+      type: 'init',
+      inputMode: 'arraystack',
+      expStack: [...expStack],
+      auxStack: [...auxStack],
+      tokensList: [...tokensList],
+    });
+
+    // Process tokens (same logic as str mode but with arraystack metadata)
+    const tokens = tokensList;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+
+      if (ops.includes(token)) {
+        steps.push({
+          tokenIndex: i, token,
+          action: `Token: "${token}" (operador)`,
+          detail: `token in ["+", "-", "*", "/", "^"] → True`,
+          stack: [...stack],
+          highlightLines: [22, 24],
+          type: 'init',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+
+        if (stack.length < 2) {
+          steps.push({
+            tokenIndex: i, token,
+            action: '❌ Error: faltan operandos',
+            detail: `len(pila) = ${stack.length} < 2`,
+            stack: [...stack],
+            highlightLines: [26, 27],
+            type: 'error',
+            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+          });
+          return steps;
+        }
+
+        const bEntry = stack.pop()!;
+        steps.push({
+          tokenIndex: i, token,
+          action: `pop() → ${formatValue(bEntry.value)}`,
+          detail: `b = pila.pop() → ${formatValue(bEntry.value)}`,
+          stack: [...stack],
+          highlightLines: [29],
+          type: 'pop',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+
+        const aEntry = stack.pop()!;
+        steps.push({
+          tokenIndex: i, token,
+          action: `pop() → ${formatValue(aEntry.value)}`,
+          detail: `a = pila.pop() → ${formatValue(aEntry.value)}`,
+          stack: [...stack],
+          highlightLines: [30],
+          type: 'pop',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+
+        const a = aEntry.value as number, b = bEntry.value as number;
+        let result: number;
+        let opLines: number[];
+
+        switch (token) {
+          case '+': result = a + b; opLines = [32, 33]; break;
+          case '-': result = a - b; opLines = [34, 35]; break;
+          case '*': result = a * b; opLines = [36, 37]; break;
+          case '/': result = a / b; opLines = [38, 39]; break;
+          case '^': result = Math.pow(a, b); opLines = [40, 41]; break;
+          default: result = 0; opLines = [32, 33];
+        }
+
+        const resultEntry = { id: nextId(), value: result };
+        stack.push(resultEntry);
+
+        steps.push({
+          tokenIndex: i, token,
+          action: `${formatNumber(a)} ${token === '^' ? '**' : token} ${formatNumber(b)} = ${formatNumber(result)}`,
+          detail: `pila.push(${formatNumber(result)})`,
+          stack: [...stack],
+          highlightLines: opLines,
+          type: 'compute',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+
+      } else {
+        const num = parseFloat(token);
+
+        if (isNaN(num)) {
+          steps.push({
+            tokenIndex: i, token,
+            action: `Token: "${token}"`,
+            detail: 'No es número ni operador válido',
+            stack: [...stack],
+            highlightLines: [22, 43, 44, 45],
+            type: 'init',
+            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+          });
+          steps.push({
+            tokenIndex: i, token,
+            action: `❌ Error: operador inválido`,
+            detail: `"${token}" no es un token válido`,
+            stack: [...stack],
+            highlightLines: [47, 48],
+            type: 'error',
+            inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+          });
+          return steps;
+        }
+
+        steps.push({
+          tokenIndex: i, token,
+          action: `Token: "${token}" (número)`,
+          detail: `numero = float("${token}") → ${formatNumber(num)}`,
+          stack: [...stack],
+          highlightLines: [22, 43, 44, 45],
+          type: 'init',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+
+        const entry = { id: nextId(), value: num };
+        stack.push(entry);
+
+        steps.push({
+          tokenIndex: i, token,
+          action: `push(${formatNumber(num)})`,
+          detail: `pila.push(${formatNumber(num)})`,
+          stack: [...stack],
+          highlightLines: [46],
+          type: 'push',
+          inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+        });
+      }
+    }
+
+    if (stack.length > 1) {
+      steps.push({
+        tokenIndex: tokens.length, token: '',
+        action: '❌ Error: demasiados operandos',
+        detail: `len(pila) = ${stack.length} > 1`,
+        stack: [...stack],
+        highlightLines: [50, 51],
+        type: 'error',
+        inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+      });
+      return steps;
+    }
+
+    if (stack.length === 1) {
+      const resultado = stack[0].value as number;
+      steps.push({
+        tokenIndex: tokens.length, token: '',
+        action: `✅ Resultado: ${formatNumber(resultado)}`,
+        detail: `resultado = pila.pop() → ${formatNumber(resultado)}`,
+        stack: [],
+        highlightLines: [53, 55, 56],
+        type: 'result',
+        inputMode: 'arraystack', expStack: [...expStack], auxStack: [], tokensList: [...tokensList],
+      });
+    }
+
+    return steps;
+  }
+
+  // === STR MODE (original) ===
+  const tokens = rawTokens;
+  const base = makeBaseStep('str');
+
   steps.push({
     tokenIndex: -1, token: '',
-    action: 'Inicializar',
+    action: 'Verificar tipo de entrada',
+    detail: `isinstance(exp, str) → True`,
+    stack: [...stack],
+    highlightLines: [2],
+    type: 'init',
+    ...base,
+  });
+
+  steps.push({
+    tokenIndex: -1, token: '',
+    action: 'Obtener tokens',
     detail: `tokens = "${expression}".split() → [${tokens.map(t => `"${t}"`).join(', ')}]`,
     stack: [...stack],
-    highlightLines: [2, 3],
-    type: 'init'
+    highlightLines: [3],
+    type: 'init',
+    ...base,
   });
 
   steps.push({
@@ -43,7 +356,8 @@ export function generateSteps(expression: string): SimStep[] {
     detail: 'pila = ArrayStack()',
     stack: [...stack],
     highlightLines: [20],
-    type: 'init'
+    type: 'init',
+    ...base,
   });
 
   for (let i = 0; i < tokens.length; i++) {
@@ -56,7 +370,8 @@ export function generateSteps(expression: string): SimStep[] {
         detail: `token in ["+", "-", "*", "/", "^"] → True`,
         stack: [...stack],
         highlightLines: [22, 24],
-        type: 'init'
+        type: 'init',
+        ...base,
       });
 
       if (stack.length < 2) {
@@ -66,7 +381,8 @@ export function generateSteps(expression: string): SimStep[] {
           detail: `len(pila) = ${stack.length} < 2`,
           stack: [...stack],
           highlightLines: [26, 27],
-          type: 'error'
+          type: 'error',
+          ...base,
         });
         return steps;
       }
@@ -74,24 +390,26 @@ export function generateSteps(expression: string): SimStep[] {
       const bEntry = stack.pop()!;
       steps.push({
         tokenIndex: i, token,
-        action: `pop() → ${formatNumber(bEntry.value)}`,
-        detail: `b = pila.pop() → ${formatNumber(bEntry.value)}`,
+        action: `pop() → ${formatValue(bEntry.value)}`,
+        detail: `b = pila.pop() → ${formatValue(bEntry.value)}`,
         stack: [...stack],
         highlightLines: [29],
-        type: 'pop'
+        type: 'pop',
+        ...base,
       });
 
       const aEntry = stack.pop()!;
       steps.push({
         tokenIndex: i, token,
-        action: `pop() → ${formatNumber(aEntry.value)}`,
-        detail: `a = pila.pop() → ${formatNumber(aEntry.value)}`,
+        action: `pop() → ${formatValue(aEntry.value)}`,
+        detail: `a = pila.pop() → ${formatValue(aEntry.value)}`,
         stack: [...stack],
         highlightLines: [30],
-        type: 'pop'
+        type: 'pop',
+        ...base,
       });
 
-      const a = aEntry.value, b = bEntry.value;
+      const a = aEntry.value as number, b = bEntry.value as number;
       let result: number;
       let opLines: number[];
 
@@ -113,7 +431,8 @@ export function generateSteps(expression: string): SimStep[] {
         detail: `pila.push(${formatNumber(result)})`,
         stack: [...stack],
         highlightLines: opLines,
-        type: 'compute'
+        type: 'compute',
+        ...base,
       });
 
     } else {
@@ -126,7 +445,8 @@ export function generateSteps(expression: string): SimStep[] {
           detail: 'No es número ni operador válido',
           stack: [...stack],
           highlightLines: [22, 43, 44, 45],
-          type: 'init'
+          type: 'init',
+          ...base,
         });
         steps.push({
           tokenIndex: i, token,
@@ -134,7 +454,8 @@ export function generateSteps(expression: string): SimStep[] {
           detail: `"${token}" no es un token válido`,
           stack: [...stack],
           highlightLines: [47, 48],
-          type: 'error'
+          type: 'error',
+          ...base,
         });
         return steps;
       }
@@ -145,7 +466,8 @@ export function generateSteps(expression: string): SimStep[] {
         detail: `numero = float("${token}") → ${formatNumber(num)}`,
         stack: [...stack],
         highlightLines: [22, 43, 44, 45],
-        type: 'init'
+        type: 'init',
+        ...base,
       });
 
       const entry = { id: nextId(), value: num };
@@ -157,7 +479,8 @@ export function generateSteps(expression: string): SimStep[] {
         detail: `pila.push(${formatNumber(num)})`,
         stack: [...stack],
         highlightLines: [46],
-        type: 'push'
+        type: 'push',
+        ...base,
       });
     }
   }
@@ -169,20 +492,22 @@ export function generateSteps(expression: string): SimStep[] {
       detail: `len(pila) = ${stack.length} > 1`,
       stack: [...stack],
       highlightLines: [50, 51],
-      type: 'error'
+      type: 'error',
+      ...base,
     });
     return steps;
   }
 
   if (stack.length === 1) {
-    const resultado = stack[0].value;
+    const resultado = stack[0].value as number;
     steps.push({
       tokenIndex: tokens.length, token: '',
       action: `✅ Resultado: ${formatNumber(resultado)}`,
       detail: `resultado = pila.pop() → ${formatNumber(resultado)}`,
       stack: [],
       highlightLines: [53, 55, 56],
-      type: 'result'
+      type: 'result',
+      ...base,
     });
   }
 
