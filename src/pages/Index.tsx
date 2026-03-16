@@ -31,7 +31,7 @@ const fadeUp = {
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState(0);
-  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
 
   // Mini stack demo
   const [miniStack, setMiniStack] = useState<StackEntry[]>([]);
