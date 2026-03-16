@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   BookOpen, Layers, Code, Play, CheckCircle,
-  ArrowRight, ArrowDown, ChevronRight
+  ArrowRight, ArrowDown, ChevronRight, Users
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -122,13 +122,15 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center space-y-12">
           <motion.div {...fadeUp}>
             <Badge variant="outline" className="mb-4 text-xs">Estructuras de Datos — Python</Badge>
-            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-4">
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
               Notación Polaca
               <br />
               <span className="text-primary">Postfija</span>
             </h1>
-            <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-              Evaluación de expresiones matemáticas usando pilas
+            <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+              La <strong>Notación Polaca Postfija</strong> (Reverse Polish Notation) es una forma de escribir
+              expresiones matemáticas <strong>sin utilizar paréntesis</strong> ni reglas de precedencia.
+              Se evalúa usando una estructura de datos llamada <strong>pila (stack)</strong>.
             </p>
           </motion.div>
 
@@ -143,7 +145,7 @@ const Index = () => {
                 (5 + 2) × (8 − 3)
               </code>
               <p className="text-sm text-muted-foreground">
-                Requiere paréntesis para definir el orden
+                Requiere paréntesis para definir el orden de las operaciones
               </p>
             </Card>
             <Card className="p-6 text-left border-primary/30 bg-accent/30">
@@ -159,24 +161,47 @@ const Index = () => {
             </Card>
           </motion.div>
 
+          {/* How it works - improved */}
           <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.3 }}
-            className="max-w-2xl mx-auto"
+            className="max-w-3xl mx-auto text-left"
           >
-            <h3 className="font-semibold mb-6 text-lg">¿Cómo funciona?</h3>
-            <div className="flex flex-col md:flex-row items-center gap-4 justify-center">
-              {[
-                { n: '1', text: 'Lee tokens de izquierda a derecha' },
-                { n: '2', text: 'Número → push a la pila' },
-                { n: '3', text: 'Operador → pop dos, opera, push resultado' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold flex-shrink-0">
-                    {item.n}
-                  </div>
-                  <span className="text-sm text-left">{item.text}</span>
-                  {i < 2 && <ChevronRight className="w-4 h-4 text-muted-foreground hidden md:block flex-shrink-0" />}
+            <h3 className="font-semibold mb-6 text-xl text-center">¿Cómo funciona el algoritmo?</h3>
+            <div className="grid md:grid-cols-3 gap-5">
+              <Card className="p-5 space-y-2">
+                <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">1</div>
+                <h4 className="font-semibold text-sm">Leer la expresión</h4>
+                <p className="text-sm text-muted-foreground">
+                  La expresión se divide en elementos llamados <strong>tokens</strong> y se lee de izquierda a derecha.
+                </p>
+                <code className="text-xs font-mono bg-muted px-2 py-1 rounded block">
+                  "5 2 + 8 3 - *" → [5, 2, +, 8, 3, -, *]
+                </code>
+              </Card>
+
+              <Card className="p-5 space-y-2">
+                <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">2</div>
+                <h4 className="font-semibold text-sm">Si es un número → push</h4>
+                <p className="text-sm text-muted-foreground">
+                  Se guarda en la pila usando <code className="font-mono bg-muted px-1 rounded text-xs">push()</code>.
+                </p>
+                <div className="text-xs font-mono bg-muted px-2 py-1 rounded space-y-0.5">
+                  <div>push(5) → Pila: [5]</div>
+                  <div>push(2) → Pila: [5, 2]</div>
                 </div>
-              ))}
+              </Card>
+
+              <Card className="p-5 space-y-2">
+                <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">3</div>
+                <h4 className="font-semibold text-sm">Si es un operador → pop, opera, push</h4>
+                <p className="text-sm text-muted-foreground">
+                  Se sacan dos números, se opera y el resultado vuelve a la pila.
+                </p>
+                <div className="text-xs font-mono bg-muted px-2 py-1 rounded space-y-0.5">
+                  <div>b = pop() → 2</div>
+                  <div>a = pop() → 5</div>
+                  <div>push(5 + 2) → push(7)</div>
+                </div>
+              </Card>
             </div>
           </motion.div>
 
@@ -192,11 +217,12 @@ const Index = () => {
         className="min-h-screen flex items-center px-4 py-20"
       >
         <div className="max-w-5xl mx-auto space-y-12 w-full">
-          <motion.div {...fadeUp} className="text-center">
+          <motion.div {...fadeUp} className="text-center max-w-2xl mx-auto">
             <Badge variant="outline" className="mb-4 text-xs">Stack / Pila</Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-3">¿Qué es una Pila?</h2>
-            <p className="text-lg text-muted-foreground">
-              <strong>LIFO</strong>: Last In, First Out — El último en entrar es el primero en salir
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">¿Qué es una Pila?</h2>
+            <p className="text-base text-muted-foreground leading-relaxed">
+              Una <strong>pila (stack)</strong> es una estructura de datos que funciona bajo el principio
+              <strong> LIFO — Last In, First Out</strong>: el último elemento en entrar es el primero en salir.
             </p>
           </motion.div>
 
@@ -227,19 +253,32 @@ const Index = () => {
                 </p>
               </Card>
 
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { emoji: '📥', name: 'push(e)', desc: 'Añade al tope' },
-                  { emoji: '📤', name: 'pop()', desc: 'Remueve del tope' },
-                  { emoji: '👀', name: 'top()', desc: 'Ver el tope' },
-                ].map((op, i) => (
-                  <Card key={i} className="p-3 text-center">
-                    <div className="text-xl mb-1">{op.emoji}</div>
-                    <h4 className="font-semibold text-xs font-mono">{op.name}</h4>
-                    <p className="text-[10px] text-muted-foreground">{op.desc}</p>
-                  </Card>
-                ))}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm text-center">Operaciones principales</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { emoji: '📥', name: 'push(e)', desc: 'Agrega un elemento al tope' },
+                    { emoji: '📤', name: 'pop()', desc: 'Elimina el elemento del tope' },
+                    { emoji: '👀', name: 'top()', desc: 'Muestra el elemento superior' },
+                  ].map((op, i) => (
+                    <Card key={i} className="p-3 text-center">
+                      <div className="text-xl mb-1">{op.emoji}</div>
+                      <h4 className="font-semibold text-xs font-mono">{op.name}</h4>
+                      <p className="text-[11px] text-muted-foreground">{op.desc}</p>
+                    </Card>
+                  ))}
+                </div>
               </div>
+
+              <Card className="p-4 bg-muted/30">
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">Usos comunes de pilas</h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• Evaluación de expresiones matemáticas</li>
+                  <li>• Compiladores y análisis sintáctico</li>
+                  <li>• Manejo de memoria (call stack)</li>
+                  <li>• Algoritmos de backtracking</li>
+                </ul>
+              </Card>
             </motion.div>
 
             <motion.div
@@ -251,7 +290,7 @@ const Index = () => {
               <CodePanel
                 code={ARRAY_STACK_CODE}
                 title="ArrayStack.py"
-                maxHeight="520px"
+                maxHeight="600px"
               />
             </motion.div>
           </div>
@@ -272,24 +311,39 @@ const Index = () => {
             </p>
           </motion.div>
 
-          {/* Flow */}
+          {/* Improved flow explanation */}
           <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.1 }}
-            className="flex flex-wrap justify-center gap-2 items-center"
+            className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3"
           >
             {[
-              { label: 'Identificar entrada', desc: 'str o ArrayStack' },
-              { label: 'Obtener tokens', desc: 'split() o extraer' },
-              { label: 'Crear pila', desc: 'pila = ArrayStack()' },
-              { label: 'Procesar tokens', desc: 'push / pop+op+push' },
-              { label: 'Retornar resultado', desc: 'pila.pop()' },
+              {
+                n: '1', label: 'Identificar entrada',
+                desc: 'La función acepta una cadena de texto o una pila ArrayStack.',
+              },
+              {
+                n: '2', label: 'Obtener tokens',
+                desc: 'Si es cadena, se usa split() para separar en elementos.',
+              },
+              {
+                n: '3', label: 'Crear pila',
+                desc: 'Se crea una nueva pila para almacenar números durante la evaluación.',
+              },
+              {
+                n: '4', label: 'Procesar tokens',
+                desc: 'Número → push a la pila. Operador → pop dos, opera, push resultado.',
+              },
+              {
+                n: '5', label: 'Retornar resultado',
+                desc: 'El único valor en la pila es el resultado final.',
+              },
             ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Card className="p-3 text-center min-w-[120px]">
-                  <p className="font-semibold text-xs">{item.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{item.desc}</p>
-                </Card>
-                {i < 4 && <ArrowRight className="w-4 h-4 text-primary flex-shrink-0" />}
-              </div>
+              <Card key={i} className="p-4 text-center relative">
+                <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold mx-auto mb-2">
+                  {item.n}
+                </div>
+                <p className="font-semibold text-xs mb-1">{item.label}</p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">{item.desc}</p>
+              </Card>
             ))}
           </motion.div>
 
@@ -297,7 +351,7 @@ const Index = () => {
             <CodePanel
               code={NOTACION_POLACA_CODE}
               title="Notacion_Polaca.py — Código completo"
-              maxHeight="520px"
+              maxHeight="600px"
             />
           </motion.div>
         </div>
@@ -340,31 +394,37 @@ const Index = () => {
             {[
               {
                 title: '📚 Pilas como estructura clave',
-                desc: 'La pila (LIFO) es fundamental para evaluar expresiones postfijas de forma eficiente.',
+                desc: 'La pila (LIFO) permite evaluar expresiones postfijas de forma simple y eficiente, sin necesidad de analizar precedencia de operadores.',
               },
               {
                 title: '⚡ Algoritmo lineal O(n)',
-                desc: 'Se recorre cada token una sola vez, haciendo el algoritmo extremadamente eficiente.',
+                desc: 'Cada token se procesa una sola vez, por lo que el algoritmo tiene complejidad O(n), haciéndolo extremadamente eficiente.',
               },
               {
-                title: '🔗 Sin paréntesis',
-                desc: 'La notación postfija elimina la ambigüedad y la necesidad de reglas de precedencia.',
+                title: '🔗 Sin necesidad de paréntesis',
+                desc: 'La notación postfija elimina la ambigüedad del orden de operaciones. No se necesitan reglas de precedencia.',
               },
               {
                 title: '🌍 Aplicaciones reales',
-                desc: 'Usado en calculadoras HP, compiladores, máquinas virtuales y lenguajes como Forth.',
+                desc: 'Este método se utiliza en calculadoras científicas (HP), compiladores, máquinas virtuales y lenguajes como Forth.',
               },
             ].map((item, i) => (
               <Card key={i} className="p-5">
                 <h3 className="font-semibold mb-2 text-sm">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
               </Card>
             ))}
           </motion.div>
 
-          <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.3 }}>
+          <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.3 }}
+            className="space-y-4"
+          >
             <p className="text-3xl font-bold text-primary mb-2">¡Gracias!</p>
-            <p className="text-muted-foreground text-lg">¿Preguntas?</p>
+            <div className="flex items-center justify-center gap-2 text-muted-foreground">
+              <Users className="w-5 h-5" />
+              <p className="text-lg font-medium">Juan Vargas &amp; Eloy Quintero</p>
+            </div>
+            <p className="text-muted-foreground">¿Preguntas?</p>
           </motion.div>
         </div>
       </section>
