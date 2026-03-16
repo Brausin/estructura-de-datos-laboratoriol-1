@@ -136,7 +136,7 @@ export function CodePanel({ code, highlightedLines = [], title, className, maxHe
       )}
       <div
         ref={containerRef}
-        className="overflow-auto font-mono text-[14px] leading-7 bg-slate-900 scroll-smooth"
+        className="relative overflow-auto font-mono text-[14px] leading-7 bg-slate-900 scroll-smooth"
         style={{ maxHeight }}
       >
         {lines.map((line, i) => {
