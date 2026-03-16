@@ -140,7 +140,7 @@ export function CodePanel({ code, highlightedLines = [], title, className, maxHe
         style={{ maxHeight }}
       >
         {lines.map((line, i) => {
-          const isHighlighted = highlightedLines.includes(i);
+          const isHighlighted = highlightedLines.includes(i + 1);
           return (
             <div
               key={i}

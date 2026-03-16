@@ -122,6 +122,7 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center space-y-12">
           <motion.div {...fadeUp}>
             <Badge variant="outline" className="mb-4 text-xs">Estructuras de Datos — Python</Badge>
+            <p className="text-sm text-muted-foreground font-medium mb-2">Juan Vargas &amp; Eloy Quintero</p>
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
               Notación Polaca
               <br />
