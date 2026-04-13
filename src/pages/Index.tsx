@@ -122,7 +122,7 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center space-y-12">
           <motion.div {...fadeUp}>
             <Badge variant="outline" className="mb-4 text-xs">Estructuras de Datos — Python</Badge>
-            <p className="text-sm text-muted-foreground font-medium mb-2">Juan Vargas &amp; Eloy Quintero</p>
+            <p className="text-sm text-muted-foreground font-medium mb-2">Brausin Studio</p>
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
               Notación Polaca
               <br />
@@ -423,9 +423,18 @@ const Index = () => {
             <p className="text-3xl font-bold text-primary mb-2">¡Gracias!</p>
             <div className="flex items-center justify-center gap-2 text-muted-foreground">
               <Users className="w-5 h-5" />
-              <p className="text-lg font-medium">Juan Vargas &amp; Eloy Quintero</p>
+              <p className="text-lg font-medium">Brausin Studio</p>
             </div>
-            <p className="text-muted-foreground">¿Preguntas?</p>
+            <p className="text-muted-foreground">
+              <a
+                href="https://www.brausinstudio.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary transition-colors"
+              >
+                brausinstudio.com
+              </a>
+            </p>
           </motion.div>
         </div>
       </section>
